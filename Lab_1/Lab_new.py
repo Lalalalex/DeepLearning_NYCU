@@ -5,7 +5,8 @@ from tqdm import tqdm
 class Cfg:
     lr = 0.05
     activate = 'Sigmoid'
-    epoch = 30000
+    schedular = 'WarmupLinear'
+    epoch = 50000
 
 def generate_linear(n = 100):
     pts = np.random.uniform(0, 1, (n, 2))
@@ -47,7 +48,7 @@ def show_result(x, y, pred_y, file_name = 'result.png'):
     plt.subplot(1, 2, 2)
     plt.title('Predict result', fontsize = 18)
     for i in range(x.shape[0]):
-        if pred_y[i] < 0.5:
+        if pred_y[i] == 0:
             plt.plot(x[i][0], x[i][1], 'ro')
         else:
             plt.plot(x[i][0], x[i][1], 'bo')
@@ -130,13 +131,14 @@ class Network:
     def update(self):
         for layer in self.network:
             layer.update(self.lr)
-    def schedular_step(self, step, total_step, schedular = 'None', warmup_step = 3000):
+    def schedular_step(self, step, total_step, schedular = 'None', warmup_step = 15000, gamma = 0.95):
         schedular_list = {
-            'None': lambda lr : lr,
-            'WarmupLinear': lambda lr : float(step) / float(max(1, warmup_step)) \
+            'None': lambda lr: lr,
+            'ExponentialLR': lambda lr: gamma * lr if step % 1000 == 0 else lr,
+            'PolynomialLR': lambda lr: lr - gamma,
+            'WarmupLinear': lambda lr: float(step) / float(max(1, warmup_step)) \
             if step < warmup_step \
             else max(0.0, float(total_step - step)) / float(max(1.0, total_step - warmup_step)),
-
         }
         if schedular in schedular_list:
             self.lr =  schedular_list[schedular](self.lr)
@@ -147,25 +149,35 @@ class Network:
     def d_loss(self, predict, label):
         return -(label - predict)/len(label.shape)
     
+def predict2label(predict, threshold = 0.5):
+    return np.where(predict > threshold, 1, 0)
 
 lr = []
-def train(network, data, epoch = Cfg.epoch):
+def train(model, data, epoch = Cfg.epoch):
     total_loss = []
-    for i in tqdm(range(epoch)):
-        lr.append(network.lr)
-        network.predict = network.forward(data["input"])
-        loss = network.loss_function(network.predict, data['label'])
-        total_loss.append(loss)
-        network.backward(network.d_loss(network.predict, data['label']))
-        network.update()
-        network.schedular_step(schedular = 'WarmupLinear', step = i, total_step = epoch)
-    return total_loss
+    with tqdm(range(epoch)) as tqdm_loader:
+        for i in tqdm_loader:
+            lr.append(model.lr)
+            predict = predict2label(model.forward(data["input"]))
+            loss = model.loss_function(predict, data['label'])
+            total_loss.append(loss)
+            model.backward(model.d_loss(predict, data['label']))
+            model.update()
+            model.schedular_step(schedular = Cfg.schedular, step = i, total_step = epoch)
+            accuracy = np.sum(predict == data['label']) / len(data['label'])
+            tqdm_loader.set_postfix(epoch = i, loss = loss, lr = model.lr, accuracy = accuracy)
+        return total_loss
+
+def test(model, data):
+    predict = predict2label(model.forward(data["input"]))
+    return predict
 
 data_linear = {}
 data_linear['input'], data_linear['label'] = generate_linear()
-network_linear = Network(input_number = 2, output_number = 1, hidden_number = 2, hidden_size = 4)
-total_loss_linear = train(network_linear, data_linear)
-show_result(data_linear['input'], data_linear['label'], network_linear.predict, file_name = 'linear.png')
+model_linear = Network(input_number = 2, output_number = 1, hidden_number = 2, hidden_size = 4)
+total_loss_linear = train(model_linear, data_linear)
+predict = test(model_linear, data_linear)
+show_result(data_linear['input'], data_linear['label'], predict, file_name = 'linear')
 show_curve(total_loss_linear, file_name = 'linear_loss')
 
 
@@ -173,7 +185,8 @@ show_curve(lr, file_name = 'learning_rate', title = 'learning rate curve', x = '
 
 data_XOR = {}
 data_XOR['input'], data_XOR['label'] = generate_XOR_easy()
-network_XOR = Network(input_number = 2, output_number = 1, hidden_number = 2, hidden_size = 4)
-total_loss_XOR = train(network_XOR, data_XOR)
-show_result(data_XOR['input'], data_XOR['label'], network_XOR.predict, file_name = 'XOR.png')
+model_XOR = Network(input_number = 2, output_number = 1, hidden_number = 2, hidden_size = 4)
+total_loss_XOR = train(model_XOR, data_XOR)
+predict = test(model_XOR, data_XOR)
+show_result(data_XOR['input'], data_XOR['label'], predict, file_name = 'XOR')
 show_curve(total_loss_XOR, file_name = 'XOR_loss')
