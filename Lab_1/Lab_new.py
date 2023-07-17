@@ -8,7 +8,7 @@ import math
 
 class Cfg:
     lr = 0.1
-    epoch = 50000
+    epoch = 500
     warmup_step = 150
     seed = '312551116'
     activate = 'Sigmoid'
