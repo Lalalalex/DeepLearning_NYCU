@@ -20,7 +20,10 @@ class cfg:
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     split = 0.9
     batch_size = 128
-    activate = 'ELU'
+    model = 'EEGNet'
+    activate = 'ReLU'
+    optimizer = 'AdamW'
+    loss_function = 'cross_entropy'
     lr = 5e-2
     epoch = 300
 
@@ -52,7 +55,7 @@ def train_transform(data):
     return data
 
 class EEGDataSet(Dataset):
-    def __init__(self, data, transform = 'None', is_test_model = False):
+    def __init__(self, data, transform = None, is_test_model = False):
         self.data = data
         self.is_test_model = is_test_model
         self.transform = transform
@@ -165,85 +168,107 @@ def train_one_epoch(model, dataloader, loss_function, optimizer):
     total_loss = 0
     total_accuracy = 0
     avg_accuracy = 0
-    with tqdm(dataloader, unit = 'batch', desc = 'Train') as tqdm_loader:
-        for index, (input, label) in enumerate(tqdm_loader):
-            input = input.to(cfg.device)
-            input = torch.tensor(input, dtype = torch.float)
-            label = label.to(cfg.device)
-            label = torch.tensor(label, dtype = torch.long)
+    for index, (input, label) in enumerate(dataloader):
+        input = input.to(cfg.device)
+        input = torch.tensor(input, dtype = torch.float)
+        label = label.to(cfg.device)
+        label = torch.tensor(label, dtype = torch.long)
 
-            predict = model(input)
-            loss = loss_function(predict, label)
-            predict = predict.cpu().detach().argmax(dim = 1)
+        predict = model(input)
+        loss = loss_function(predict, label)
+        predict = predict.cpu().detach().argmax(dim = 1)
 
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
 
-            current_loss = loss.detach().item()
-            total_loss = total_loss + current_loss
-            current_accuracy = accuracy_score(predict, label.cpu())
-            total_accuracy = total_accuracy + current_accuracy
-            avg_accuracy = total_accuracy/(index + 1)
-
-            tqdm_loader.set_postfix(loss = current_loss ,avg_loss = total_loss/(index + 1), avg_accuracy = f'{avg_accuracy:.4f}')
+        current_loss = loss.detach().item()
+        total_loss = total_loss + current_loss
+        current_accuracy = accuracy_score(predict, label.cpu())
+        total_accuracy = total_accuracy + current_accuracy
+        avg_accuracy = total_accuracy/(index + 1)
     return avg_accuracy
 def test_one_epoch(model, test_data, loss_function, best_accuracy, best_loss):
     model.eval()
     with torch.no_grad():
-        with tqdm(range(1)) as tqdm_loader:
-            input = test_data['input']
-            input = torch.from_numpy(input).to(cfg.device)
-            input = torch.tensor(input, dtype = torch.float)
+        input = test_data['input']
+        input = torch.from_numpy(input).to(cfg.device)
+        input = torch.tensor(input, dtype = torch.float)
 
-            label = test_data['label']
-            label = torch.from_numpy(label).to(cfg.device)
-            label = torch.tensor(label, dtype = torch.long)
+        label = test_data['label']
+        label = torch.from_numpy(label).to(cfg.device)
+        label = torch.tensor(label, dtype = torch.long)
 
-            predict = model(input)
-            loss = loss_function(predict, label)
-            predict = predict
-            predict = predict.cpu().detach().argmax(dim = 1)
+        predict = model(input)
+        loss = loss_function(predict, label)
+        predict = predict
+        predict = predict.cpu().detach().argmax(dim = 1)
 
-            accuracy = accuracy_score(predict, label.cpu())
-            if accuracy > best_accuracy:
-                best_accuracy = accuracy
+        accuracy = accuracy_score(predict, label.cpu())
+        if accuracy > best_accuracy:
+            best_accuracy = accuracy
+            best_loss = loss
+            torch.save(model.state_dict(),'best_model.pkl')
+        elif accuracy == best_accuracy:
+            if loss <= best_loss:
                 best_loss = loss
                 torch.save(model.state_dict(),'best_model.pkl')
-            elif accuracy == best_accuracy:
-                if loss <= best_loss:
-                    best_loss = loss
-                    torch.save(model.state_dict(),'best_model.pkl')
-            tqdm_loader.set_postfix(accuracy = f'{accuracy:.4f}', best_accuracy = f'{best_accuracy:.4f}', best_loss = f'{best_loss:.4f}')
     return accuracy, best_accuracy, best_loss
-            
+def train_and_test(title, model = cfg.model, activate = cfg.activate, optimizer = cfg.optimizer, loss_function = cfg.loss_function, batch_size = cfg.batch_size):
+    train_accuracy_curve = []
+    test_accuracy_curve = []
+    setSeed(cfg.seed)
+    train_data_loader = torch.utils.data.DataLoader(train_data_set, batch_size = batch_size, pin_memory = True, drop_last = False, num_workers = 4)
+    models = {
+        'EEGNet': EEGNet(activate = activate),
+        'DeepConvNet': DeepConvNet(activate = activate)
+    }
+    current_model =  models[model].to(cfg.device)
+    optimizers = {
+        'Ranger21': Ranger21(current_model.parameters(), lr = cfg.lr, num_epochs = cfg.epoch, num_batches_per_epoch = len(train_data_loader)),
+        'AdamW': torch.optim.AdamW(current_model.parameters(), lr = cfg.lr),
+        'SGD': torch.optim.SGD(current_model.parameters(), lr = cfg.lr, momentum = 0.9, nesterov = True)
+    }
+    current_optimizer = optimizers[optimizer]
+    loss_functions = {
+        'cross_entropy': torch.nn.CrossEntropyLoss()
+    }
+    current_loss_function = loss_functions[loss_function]
+
+    best_loss = 10
+    best_accuracy = -10
+    
+    with tqdm(range(cfg.epoch), desc = title) as tqdm_loader:
+        for epoch in tqdm_loader:
+            train_accuracy = train_one_epoch(current_model, train_data_loader, current_loss_function, current_optimizer)
+            test_accuracy, best_accuracy, best_loss = test_one_epoch(current_model, test_data, current_loss_function, best_accuracy, best_loss)
+            train_accuracy_curve.append(train_accuracy)
+            test_accuracy_curve.append(test_accuracy)
+            tqdm_loader.set_postfix(train_accuracy = f'{train_accuracy:.4f}', test_accuracy = f'{test_accuracy:.4f}', best_accuracy = f'{best_accuracy:.4f}')
+    return train_accuracy_curve, test_accuracy_curve
 
 setSeed(cfg.seed)
-
 train_data = {}
 test_data = {}
 train_data['input'], train_data['label'], test_data['input'], test_data['label'] = dataloader.read_bci_data()
 
 train_data, valid_data = split_data(train_data)
-
 train_data_set = EEGDataSet(train_data, transform = train_transform)
 
-train_data_loader = torch.utils.data.DataLoader(train_data_set, batch_size = cfg.batch_size, pin_memory = True, drop_last = False, num_workers = 4)
-model = EEGNet().to(cfg.device)
+model_list = ['EEGNet', 'DeepConvNet']
+activate_list = ['ReLU', 'Leaky ReLU', 'ELU']
+batch_size_list = [32, 64, 128, 256, 512]
 
-cross_entropy = torch.nn.CrossEntropyLoss()
-optimizer = Ranger21(model.parameters(), lr = cfg.lr, num_epochs = cfg.epoch, num_batches_per_epoch = len(train_data_loader))
-accuracy = {'train': [], 'test': []}
-
-best_loss = 10
-best_accuracy = 0
-
-for epoch in range(cfg.epoch):
-    print('\nEpoch {}'.format(epoch))
-    accuracy_train = train_one_epoch(model, train_data_loader, cross_entropy, optimizer)
-    accuracy_test, best_accuracy, best_loss = test_one_epoch(model, test_data, cross_entropy, best_accuracy, best_loss)
-    accuracy['train'].append(accuracy_train)
-    accuracy['test'].append(accuracy_test)
-
-#show_curve(accuracy)
-model.load_state_dict(torch.load('best_model.pkl'))
+for model in model_list:
+    accuracy = {}
+    for activate in activate_list:
+        train_accuracy_curve, test_accuracy_curve = train_and_test(title = model + ' ' + activate, model = model, activate = activate)
+        accuracy[activate + '_train'] = train_accuracy_curve
+        accuracy[activate + '_test'] = test_accuracy_curve
+    show_curve(accuracy, file_name = model + '_activate')
+    accuracy = {}
+    for batch_size in batch_size_list:
+        train_accuracy_curve, test_accuracy_curve = train_and_test(title = model + ' ' + str(batch_size), model = model, batch_size = batch_size)
+        accuracy[str(batch_size) + '_train'] = train_accuracy_curve
+        accuracy[str(batch_size) + '_test'] = test_accuracy_curve
+    show_curve(accuracy, file_name = model + '_batch_size')
