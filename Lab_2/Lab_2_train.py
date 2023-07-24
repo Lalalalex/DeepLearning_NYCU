@@ -22,7 +22,7 @@ class cfg:
     batch_size = 128
     model = 'EEGNet'
     activate = 'ReLU'
-    optimizer = 'AdamW'
+    optimizer = 'Ranger21'
     loss_function = 'cross_entropy'
     lr = 5e-2
     epoch = 300
@@ -96,7 +96,7 @@ class EEGNet(nn.Module):
         activate_functions = {
             'ELU': nn.ELU(alpha = 1),
             'ReLU': nn.ReLU(),
-            'Leaky ReLU':nn.LeakyReLU(negative_slope = 0.05)
+            'Leaky ReLU':nn.LeakyReLU()
         }
         if activate in activate_functions:
             return activate_functions[activate]
@@ -148,7 +148,7 @@ class DeepConvNet(nn.Module):
         activate_functions = {
             'ELU': nn.ELU(alpha = 1),
             'ReLU': nn.ReLU(),
-            'Leaky ReLU':nn.LeakyReLU(negative_slope = 0.05)
+            'Leaky ReLU':nn.LeakyReLU()
         }
         if activate in activate_functions:
             return activate_functions[activate]
@@ -160,6 +160,61 @@ class DeepConvNet(nn.Module):
         output = self.thirdConv(output)
         output = self.forthConv(output)
         output = output.view(output.size(0), -1)
+        output = self.classifier(output)
+        return output
+class MyNet(nn.Module):
+    def __init__(self, out_feature = 2, activate = cfg.activate):
+        super().__init__()
+        self.time_filter = nn.Sequential(
+            nn.Conv2d(1, 8, kernel_size = (1, 51), stride = (1, 1), padding = (0, 25), bias = False),
+            nn.BatchNorm2d(8, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
+        )
+        self.depthWiseConv = nn.Sequential(
+            nn.Conv2d(8, 16, kernel_size = (2, 1), stride = (1, 1), bias = False),
+            nn.BatchNorm2d(16, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True),
+            self.activate_function(activate),
+            nn.Conv2d(16, 16, kernel_size = 1, stride = 1, bias = False),
+            nn.BatchNorm2d(16, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True),
+            nn.Dropout2d(p = 0.3)
+        )
+        self.shortcut_1 = nn.Sequential(
+            nn.Conv2d(8, 16, kernel_size = (2, 1), stride = 1, bias = False),
+            nn.BatchNorm2d(16, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
+        )
+        self.separableConv = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size = (1, 15), stride = (1, 1), padding = (0, 7), bias = False),
+            nn.BatchNorm2d(32, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True),
+            self.activate_function(activate),
+            nn.Conv2d(32, 32, kernel_size = (1, 15), stride = (1, 1), padding = (0, 7), bias = False),
+            nn.BatchNorm2d(32, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True),
+            nn.Dropout2d(p = 0.3)
+        )
+        self.shortcut_2 = nn.Sequential(
+            nn.Conv2d(16, 32, kernel_size = 1, stride = 1, bias = False),
+            nn.BatchNorm2d(32, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
+        )
+        self.pooling = nn.AvgPool2d(kernel_size = (1, 5), stride = (1, 5), padding = 0)
+        self.classifier = nn.Sequential(
+            nn.Linear(in_features = 960, out_features = out_feature, bias = True)
+        )
+    def activate_function(self, activate):
+        activate_functions = {
+            'ELU': nn.ELU(alpha = 1),
+            'ReLU': nn.ReLU(),
+            'Leaky ReLU': nn.LeakyReLU(),
+            'Silu': nn.SiLU()
+        }
+        if activate in activate_functions:
+            return activate_functions[activate]
+        else:
+            print('Activation function not found.')
+    def forward(self, input):
+        output = self.time_filter(input)
+        output = self.shortcut_1(output) + self.depthWiseConv(output)
+        output = self.pooling(output)
+        output = self.shortcut_2(output) + self.separableConv(output)
+        output = self.pooling(output)
+        output = output.view(output.size(0), -1)    
         output = self.classifier(output)
         return output
 
@@ -255,7 +310,7 @@ train_data['input'], train_data['label'], test_data['input'], test_data['label']
 train_data, valid_data = split_data(train_data)
 train_data_set = EEGDataSet(train_data, transform = train_transform)
 
-model_list = ['EEGNet', 'DeepConvNet']
+model_list = ['EEGNet', 'DeepConvNet', 'MyNet']
 activate_list = ['ReLU', 'Leaky ReLU', 'ELU']
 batch_size_list = [32, 64, 128, 256, 512]
 
