@@ -96,7 +96,8 @@ class EEGNet(nn.Module):
         activate_functions = {
             'ELU': nn.ELU(alpha = 1),
             'ReLU': nn.ReLU(),
-            'Leaky ReLU':nn.LeakyReLU()
+            'Leaky ReLU':nn.LeakyReLU(),
+            'SiLU': nn.SiLU()
         }
         if activate in activate_functions:
             return activate_functions[activate]
@@ -148,7 +149,8 @@ class DeepConvNet(nn.Module):
         activate_functions = {
             'ELU': nn.ELU(alpha = 1),
             'ReLU': nn.ReLU(),
-            'Leaky ReLU':nn.LeakyReLU()
+            'Leaky ReLU':nn.LeakyReLU(),
+            'SiLU': nn.SiLU()
         }
         if activate in activate_functions:
             return activate_functions[activate]
@@ -169,7 +171,7 @@ class MyNet(nn.Module):
             nn.Conv2d(1, 8, kernel_size = (1, 51), stride = (1, 1), padding = (0, 25), bias = False),
             nn.BatchNorm2d(8, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
         )
-        self.depthWiseConv = nn.Sequential(
+        self.depthConv_1 = nn.Sequential(
             nn.Conv2d(8, 16, kernel_size = (2, 1), stride = (1, 1), bias = False),
             nn.BatchNorm2d(16, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True),
             self.activate_function(activate),
@@ -181,7 +183,7 @@ class MyNet(nn.Module):
             nn.Conv2d(8, 16, kernel_size = (2, 1), stride = 1, bias = False),
             nn.BatchNorm2d(16, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
         )
-        self.separableConv = nn.Sequential(
+        self.depthConv_2 = nn.Sequential(
             nn.Conv2d(16, 32, kernel_size = (1, 15), stride = (1, 1), padding = (0, 7), bias = False),
             nn.BatchNorm2d(32, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True),
             self.activate_function(activate),
@@ -193,16 +195,20 @@ class MyNet(nn.Module):
             nn.Conv2d(16, 32, kernel_size = 1, stride = 1, bias = False),
             nn.BatchNorm2d(32, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
         )
-        self.pooling = nn.AvgPool2d(kernel_size = (1, 5), stride = (1, 5), padding = 0)
+        self.shortcut_3 = nn.Sequential(
+            nn.Conv2d(8, 32, kernel_size = (1, 25), stride = (1, 25), bias = False),
+            nn.BatchNorm2d(32, eps = 1e-5, momentum = 0.1, affine = True, track_running_stats = True)
+        )
+        self.pooling = nn.AvgPool2d(kernel_size = (1, 25), stride = (1, 25), padding = 0)
         self.classifier = nn.Sequential(
-            nn.Linear(in_features = 960, out_features = out_feature, bias = True)
+            nn.Linear(in_features = 64, out_features = out_feature, bias = True)
         )
     def activate_function(self, activate):
         activate_functions = {
             'ELU': nn.ELU(alpha = 1),
             'ReLU': nn.ReLU(),
             'Leaky ReLU': nn.LeakyReLU(),
-            'Silu': nn.SiLU()
+            'SiLU': nn.SiLU()
         }
         if activate in activate_functions:
             return activate_functions[activate]
@@ -210,9 +216,10 @@ class MyNet(nn.Module):
             print('Activation function not found.')
     def forward(self, input):
         output = self.time_filter(input)
-        output = self.shortcut_1(output) + self.depthWiseConv(output)
+        tmp = self.shortcut_3(output)
+        output = self.shortcut_1(output) + self.depthConv_1(output)
         output = self.pooling(output)
-        output = self.shortcut_2(output) + self.separableConv(output)
+        output = self.shortcut_2(output) + self.depthConv_2(output) + tmp
         output = self.pooling(output)
         output = output.view(output.size(0), -1)    
         output = self.classifier(output)
@@ -276,7 +283,8 @@ def train_and_test(title, model = cfg.model, activate = cfg.activate, optimizer 
     train_data_loader = torch.utils.data.DataLoader(train_data_set, batch_size = batch_size, pin_memory = True, drop_last = False, num_workers = 4)
     models = {
         'EEGNet': EEGNet(activate = activate),
-        'DeepConvNet': DeepConvNet(activate = activate)
+        'DeepConvNet': DeepConvNet(activate = activate),
+        'MyNet': MyNet(activate = activate)
     }
     current_model =  models[model].to(cfg.device)
     optimizers = {
@@ -310,20 +318,4 @@ train_data['input'], train_data['label'], test_data['input'], test_data['label']
 train_data, valid_data = split_data(train_data)
 train_data_set = EEGDataSet(train_data, transform = train_transform)
 
-model_list = ['EEGNet', 'DeepConvNet', 'MyNet']
-activate_list = ['ReLU', 'Leaky ReLU', 'ELU']
-batch_size_list = [32, 64, 128, 256, 512]
-
-for model in model_list:
-    accuracy = {}
-    for activate in activate_list:
-        train_accuracy_curve, test_accuracy_curve = train_and_test(title = model + ' ' + activate, model = model, activate = activate)
-        accuracy[activate + '_train'] = train_accuracy_curve
-        accuracy[activate + '_test'] = test_accuracy_curve
-    show_curve(accuracy, file_name = model + '_activate')
-    accuracy = {}
-    for batch_size in batch_size_list:
-        train_accuracy_curve, test_accuracy_curve = train_and_test(title = model + ' ' + str(batch_size), model = model, batch_size = batch_size)
-        accuracy[str(batch_size) + '_train'] = train_accuracy_curve
-        accuracy[str(batch_size) + '_test'] = test_accuracy_curve
-    show_curve(accuracy, file_name = model + '_batch_size')
+train_and_test(title = 'Train')

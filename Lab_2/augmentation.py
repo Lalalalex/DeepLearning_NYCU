@@ -8,7 +8,7 @@ def channel_swap(data, p = 0.7):
     
     return swapped_data
 
-def time_shift(data, p = 0.5, max_shift = 50):
+def time_shift(data, p = 0.7, max_shift = 50):
     num_channels = data.shape[1]
     shifted_data = data
     if np.random.rand() <= p:
@@ -18,7 +18,7 @@ def time_shift(data, p = 0.5, max_shift = 50):
     
     return shifted_data
 
-def gaussian_noise(data, p = 0.2, limit = 1):
+def gaussian_noise(data, p = 0.2, limit = 2.2):
     sign = np.random.choice([-1, 1], size = data.shape)
     noise = np.random.normal(0, 1, size = data.shape) * limit * sign
     if np.random.rand() <= p:
@@ -38,7 +38,7 @@ def tima_reverse(data, p = 0.5):
     else:
         return data
 
-def random_eliminate(data, p = 0.2, max_eliminate = 15):
+def random_eliminate(data, p = 0.2, max_eliminate = 30):
     if np.random.rand() <= p:
         num_eliminates = np.random.randint(low = 0, high = max_eliminate + 1)
         eliminate_index = np.random.randint(low = 0, high = data.shape[2], size = num_eliminates)
