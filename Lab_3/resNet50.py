@@ -2,7 +2,7 @@ import warnings
 warnings.filterwarnings('ignore')
 import torch.nn as nn
 
-class BottleneckBlock(nn.Module):
+class Bottleneck(nn.Module):
     def __init__(self, in_channel, cross_channel, out_channel, cross_stride = 1):
         super().__init__()
         self.in_channel = in_channel
@@ -36,27 +36,27 @@ class ResNet50(nn.Module):
         self.ReLU = nn.ReLU(inplace = True)
         self.maxpool = nn.MaxPool2d(kernel_size = 3, stride = 2, padding = 1, dilation = 1, ceil_mode = False)
         self.layer_1 = nn.Sequential(
-            BottleneckBlock(64, 64, 256),
-            BottleneckBlock(256, 64, 256),
-            BottleneckBlock(256, 64, 256)
+            Bottleneck(64, 64, 256),
+            Bottleneck(256, 64, 256),
+            Bottleneck(256, 64, 256)
         )
         self.layer_2 = nn.Sequential(
-            BottleneckBlock(256, 128, 512, 2),
-            BottleneckBlock(512, 128, 512),
-            BottleneckBlock(512, 128, 512),
-            BottleneckBlock(512, 128, 512)
+            Bottleneck(256, 128, 512, 2),
+            Bottleneck(512, 128, 512),
+            Bottleneck(512, 128, 512),
+            Bottleneck(512, 128, 512)
         )
         self.layer_3 = nn.Sequential(
-            BottleneckBlock(512, 256, 1024, 2),
-            BottleneckBlock(1024, 256, 1024),
-            BottleneckBlock(1024, 256, 1024),
-            BottleneckBlock(1024, 256, 1024),
-            BottleneckBlock(1024, 256, 1024)
+            Bottleneck(512, 256, 1024, 2),
+            Bottleneck(1024, 256, 1024),
+            Bottleneck(1024, 256, 1024),
+            Bottleneck(1024, 256, 1024),
+            Bottleneck(1024, 256, 1024)
         )
         self.layer_4 = nn.Sequential(
-            BottleneckBlock(1024, 512, 2048, 2),
-            BottleneckBlock(2048, 512, 2048),
-            BottleneckBlock(2048, 512, 2048)
+            Bottleneck(1024, 512, 2048, 2),
+            Bottleneck(2048, 512, 2048),
+            Bottleneck(2048, 512, 2048)
         )
         self.avgpool = nn.AdaptiveAvgPool2d(output_size=(1, 1))
         self.fc = nn.Linear(in_features=2048, out_features = out_features, bias = True)
