@@ -15,14 +15,6 @@ from math import log10
 from Trainer import VAE_Model
 import glob
 
-import math
-# def setSeed(seed = 'Lab4'):
-#     seed = math.prod([ord(i) for i in seed])%(2**32)
-#     os.environ['PYTHONHASHSEED'] = str(seed)
-#     torch.manual_seed(seed)
-#     torch.cuda.manual_seed(seed)
-#     torch.backends.cudnn.deterministic = True
-# setSeed()
 
 TA_ = """
  ██████╗ ██████╗ ███╗   ██╗ ██████╗ ██████╗  █████╗ ████████╗██╗   ██╗██╗      █████╗ ████████╗██╗ ██████╗ ███╗   ██╗███████╗    ██╗██╗██╗
@@ -77,6 +69,8 @@ from glob import glob
 from torch.utils.data import Dataset as torchData
 from torchvision.datasets.folder import default_loader as imgloader
 
+
+
 class Dataset_Dance(torchData):
     def __init__(self, root, transform, mode='test', video_len=7, partial=1.0):
         super().__init__()
@@ -103,6 +97,7 @@ class Dataset_Dance(torchData):
         for idx in range(len(label_seq)):
             labels.append(self.transform(imgloader(label_seq[idx])))
         return stack(imgs), stack(labels)
+
 
 class Test_model(VAE_Model):
     def __init__(self, args):
@@ -212,6 +207,8 @@ class Test_model(VAE_Model):
         if self.args.ckpt_path != None:
             checkpoint = torch.load(self.args.ckpt_path)
             self.load_state_dict(checkpoint['state_dict'], strict=True) 
+
+
 
 
 def main(args):
