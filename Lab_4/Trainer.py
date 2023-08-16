@@ -140,7 +140,7 @@ class VAE_Model(nn.Module):
             self.current_epoch += 1
             self.scheduler.step()
             self.teacher_forcing_ratio_update()
-            self.kl_cycle.update()
+            self.kl_annealing.update()
 
     @torch.no_grad()
     def eval(self):
