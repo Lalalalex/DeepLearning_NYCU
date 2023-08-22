@@ -125,8 +125,8 @@ class DDPG:
         self._update_behavior_network(self.gamma, total_step)
         
         self._update_target_network(self._target_actor_net, self._actor_net, self.tau)
-        self._update_target_network(self._target_critic_net_1, self._critic_net_2, self.tau)
-        self._update_target_network(self._target_critic_net_1, self._critic_net_2, self.tau)
+        self._update_target_network(self._target_critic_net_1, self._critic_net_1, self.tau)
+        self._update_target_network(self._target_critic_net_2, self._critic_net_2, self.tau)
 
     def _update_behavior_network(self, gamma, total_step):
         state, action, reward, next_state, done = self._memory.sample(self.batch_size, self.device)
@@ -143,14 +143,15 @@ class DDPG:
            q_target_2 = reward + gamma * q_next_2 * (1 - done)
            q_target = torch.min(q_target_1, q_target_2)
 
-        critic_loss_1 = self._criterion(q_value_1, q_target) 
-        critic_loss_2 = self._criterion(q_value_2, q_target)
+       
         # raise NotImplementedError
         # optimize critic
         self._actor_net.zero_grad()
         self._critic_net_1.zero_grad()
         self._critic_net_2.zero_grad()
         if total_step % self.args.critic_freq:
+            critic_loss_1 = self._criterion(q_value_1, q_target) 
+            critic_loss_2 = self._criterion(q_value_2, q_target)
             critic_loss_1.backward()
             critic_loss_2.backward()
             self._critic_opt_1.step()
@@ -285,7 +286,7 @@ def main():
     parser.add_argument('--episode', default=1200, type=int)
     parser.add_argument('--batch_size', default=64, type=int)
     parser.add_argument('--capacity', default=500000, type=int)
-    parser.add_argument('--lra', default=1e-3, type=float)
+    parser.add_argument('--lra', default=1e-2, type=float)
     parser.add_argument('--lrc', default=1e-3, type=float)
     parser.add_argument('--gamma', default=.99, type=float)
     parser.add_argument('--tau', default=.005, type=float)
