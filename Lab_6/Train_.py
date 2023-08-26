@@ -1,10 +1,8 @@
-from typing import List
-
 import torch
 import torch.utils.data
 import torchvision
 from PIL import Image
-
+import argparse
 import warnings
 warnings.filterwarnings('ignore')
 from diffusers import DDPMScheduler, UNet2DModel
@@ -18,49 +16,21 @@ from evaluator import evaluation_model
 import torchvision.transforms as transforms
 from cfg import send_message
 import torch.nn as nn
-
-# class ClassConditionedUnet(nn.Module):
-#     def __init__(self, num_classes = 24):
-#         super().__init__()
-#         self.model = UNet2DModel(
-#             sample_size = 64,          
-#             in_channels = 3,
-#             out_channels = 3,
-#             layers_per_block = 2,
-#             block_out_channels = (64, 128, 256, 256, 512, 512), 
-#             down_block_types = ( 
-#                 "DownBlock2D",          
-#                 "DownBlock2D",
-#                 "DownBlock2D",
-#                 "DownBlock2D",
-#                 "AttnDownBlock2D",     
-#                 "DownBlock2D",
-#             ), 
-#             up_block_types = (
-#                 "UpBlock2D",
-#                 "AttnUpBlock2D",        
-#                 "UpBlock2D",            
-#                 "UpBlock2D",
-#                 "UpBlock2D",
-#                 "UpBlock2D",
-#             ),
-#         )
-#         self.model.class_embedding = nn.Linear(num_classes ,256)
-
-#     def forward(self, x, t, label):
-#         return self.model(x, t, label).sample
+from cfg import setSeed
 
 class Trainer():
-    def __init__(self, dataset, eps_model, noise_scheduler, device):
+    def __init__(self, dataset, eps_model, noise_scheduler, device, args):
         self.dataset = dataset
         self.device = device
 
-        self.epochs = 160
-        self.n_samples = 64
-        self.image_channel = 3
-        self.image_size = 64
-        self.batch_size = 32
-        self.learning_rate = 1e-4
+        self.epochs = args.epoch
+        self.n_samples = args.n_samples
+        self.image_channel = args.image_channel
+        self.image_size = args.image_size
+        self.batch_size = args.batch_size
+        self.learning_rate = args.learning_rate
+        self.save_image_path = args.save_image_path
+        
         self.best_accuracy = -10
     
         self.eps_model = eps_model.to(self.device)
@@ -69,8 +39,6 @@ class Trainer():
 
         self.data_loader = torch.utils.data.DataLoader(self.dataset, self.batch_size, shuffle=True)
         self.optimizer = torch.optim.AdamW(self.eps_model.parameters(), lr = self.learning_rate)
-
-        self.image_path = './image'
         
     def get_test_label(self, data_path = "test.json"):
         label_dict = json.load(open(os.path.join('/home/pp037/DeepLearning_NYCU/Lab_6/data', "objects.json")))
@@ -87,7 +55,7 @@ class Trainer():
 
     def save_images(self, images, name):
         grid = torchvision.utils.make_grid(images)
-        save_image(grid, fp = self.image_path + name +".png")
+        save_image(grid, fp = self.save_image_path + name +".png")
     
     def transform(self):
         return transforms.Compose([
@@ -95,7 +63,7 @@ class Trainer():
             transforms.Normalize((-0.5, -0.5, -0.5), (1, 1, 1)),
         ])
 
-    def sample(self, epoch):
+    def sample(self, epoch = 0):
         test_label = torch.stack(self.get_test_label()).to(self.device)
         new_test_label = torch.stack(self.get_test_label(data_path = 'new_test.json')).to(self.device)
         
@@ -149,46 +117,66 @@ class Trainer():
                 average_loss = total_loss/(index + 1)
                 tqdm_loader.set_postfix(Average_loss = average_loss.item())
 
-    def run(self):
+    def train(self):
         for epoch in range(self.epochs):
             print('Epoch: ' + str(epoch + 1))
             self.train_epoch()
             if epoch % 5 == 0:
                 self.sample(epoch)
 
-model = MyConditionedUNet(
-    sample_size=64,       # the target image resolution
-    in_channels = 3,                 # additional input channels for class condition
-    out_channels = 3,
-    layers_per_block = 2,
-    block_out_channels = (64, 128, 256, 256, 512, 512),
-    down_block_types = (
-        "DownBlock2D",          # a regular ResNet downsampling block
-        "DownBlock2D",
-        "DownBlock2D",
-        "DownBlock2D",
-        "AttnDownBlock2D",      # a ResNet downsampling block with spatial self-attention
-        "DownBlock2D",
-    ),
-    up_block_types=(
-        "UpBlock2D",
-        "AttnUpBlock2D",        # a ResNet upsampling block with spatial self-attention
-        "UpBlock2D",            # a regular ResNet upsampling block
-        "UpBlock2D",
-        "UpBlock2D",
-        "UpBlock2D",
-    ),
-    class_embed_type='timestep',
-)
-
+    def test(self, model_path = None):
+        if model_path != None:
+            torch.load(self.eps_model, model_path)
+        self.sample()
 
 def main():
-    train_dataset = ICDataset()
-    noise_scheduler = DDPMScheduler(num_train_timesteps = 1000, beta_schedule='squaredcos_cap_v2')
-    #UNet = ClassConditionedUnet()
-    trainer = Trainer(train_dataset, model, noise_scheduler, torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-    trainer.run()
+    parser = argparse.ArgumentParser(description = __doc__)
+    parser.add_argument('--test_only', action = 'store_true')
+    parser.add_argument('--model_path', default = './Best_UNet_model.pkl')
+    parser.add_argument('--data_path', default = './data')
+    parser.add_argument('--save_image_path', default = './image')
+    parser.add_argument('--seed', default = 'Lalalalex')
+    parser.add_argument('--epoch', default = 100, type = int)
+    parser.add_argument('--n_samples', default = 64, type = int)
+    parser.add_argument('--train_time_steps', default = 1000, type = int)
+    parser.add_argument('--image_channel', default = 3, type = int)
+    parser.add_argument('--image_size', default = 64, type = int)
+    parser.add_argument('--batch_size', default = 32, type = int)
+    parser.add_argument('--learning_rate', default = 1e-4, type = float)
+    args = parser.parse_args()
 
+    setSeed(args.seed)
+    
+    eps_model = MyConditionedUNet(
+        sample_size=64,  
+        in_channels = 3,                
+        out_channels = 3,
+        layers_per_block = 2,
+        block_out_channels = (64, 128, 256, 256, 512, 512),
+        down_block_types = (
+            "DownBlock2D",         
+            "DownBlock2D",
+            "DownBlock2D",
+            "DownBlock2D",
+            "AttnDownBlock2D",      
+            "DownBlock2D",
+        ),
+        up_block_types=(
+            "UpBlock2D",
+            "AttnUpBlock2D",      
+            "UpBlock2D",           
+            "UpBlock2D",
+            "UpBlock2D",
+            "UpBlock2D",
+        ),
+        class_embed_type='timestep',)
+    train_dataset = ICDataset(root = args.data_path)
+    noise_scheduler = DDPMScheduler(num_train_timesteps = args.train_time_steps, beta_schedule='squaredcos_cap_v2')
+    trainer = Trainer(train_dataset, eps_model, noise_scheduler, torch.device('cuda' if torch.cuda.is_available() else 'cpu'), args)
+    
+    if not args.test_only:
+        trainer.train()
+    trainer.test()
 
 if __name__ == '__main__':
     main()
