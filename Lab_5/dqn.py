@@ -13,7 +13,6 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
-from cfg import send_message
 
 class ReplayMemory:
     __slots__ = ['buffer']
@@ -105,8 +104,8 @@ class DQN:
         
         with torch.no_grad():
             #q_next= self._target_net(next_state).argmax(dim = 1).item()
-            action_index = self._behavior_net(next_state).max(dim=1)[1].view(-1,1)
-            q_next= self._target_net(next_state).gather(dim=1, index=action_index.long())
+            q_next= torch.max(self._target_net(next_state), 1)[0]
+            q_next = q_next.unsqueeze(1)
             q_target = reward + gamma * q_next * (1 - is_done)
 
         loss = self._criterion(q_value, q_target)
@@ -179,7 +178,6 @@ def train(args, env, agent, writer):
 
         if total_steps >= args.warmup and total_reward > best_reward:
             best_reward = total_reward
-            send_message('Best DQN is updata. Reward = ' + str(int(total_reward)) + '.')
             agent.save(model_path = './dqn_best.pth')
 
     env.close()

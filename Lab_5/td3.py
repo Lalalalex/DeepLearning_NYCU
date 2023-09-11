@@ -12,7 +12,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
-from cfg import send_message
 
 class GaussianNoise:
     def __init__(self, dim, mu=None, std=None):
@@ -243,7 +242,6 @@ def train(args, env, agent, writer):
                 break
         if total_steps >= args.warmup and total_reward > best_reward:
             best_reward = total_reward
-            send_message('Best DDPG is updata. Reward = ' + str(int(total_reward)) + '.')
             agent.save(model_path = './ddpg_best.pth')
         if episode % 100 ==0:
             agent.save(model_path = './ddpg_' + str(episode) + '.pth')
