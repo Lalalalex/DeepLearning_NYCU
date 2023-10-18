@@ -1,4 +1,5 @@
 # DeepLearning_NYCU
+> ***覺得有幫助的歡迎幫我按顆星星***
 ## Grading
 - Labs (6次個人作業)：40%
 - Paper presentation (三人一組)：20%
